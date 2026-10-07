@@ -1,0 +1,15 @@
+# Blueprint for the BarMade backend in JorgeEstenger/Barmade (code at the repo root).
+services:
+  - type: web
+    name: barmade-api
+    runtime: node
+    plan: free
+    branch: main
+    buildCommand: npm ci && npm test
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 24
