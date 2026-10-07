@@ -15,4 +15,6 @@ async function findById(id) {
   return item ? clone(item) : null;
 }
 
-module.exports = { findAll, findById };
+const memory = { findAll, findById };
+// With DATABASE_URL (Neon) the same functions run against PostgreSQL.
+module.exports = require('../data/db').enabled ? require('./postgres/menuRepository') : memory;

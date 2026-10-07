@@ -35,7 +35,7 @@ const restock = async (req, res) => res.status(200).json(await forecastService.g
 const rush = async (req, res) => res.status(201).json(await simulationService.simulateRush(req.body));
 
 // GET /api/demo
-const demoStatus = async (req, res) => res.status(200).json(demoService.status());
+const demoStatus = async (req, res) => res.status(200).json(await demoService.status());
 // POST /api/demo/reset
 async function demoReset(req, res) {
   const result = await demoService.reset();

@@ -24,12 +24,12 @@ app.use(async (req, res, next) => {
 });
 
 // Health check / API index
-app.get('/', (req, res) => {
-  const demo = demoService.status();
+app.get('/', async (req, res) => {
+  const demo = await demoService.status();
   res.json({
     name: 'BarMade API',
     status: 'ok',
-    storage: process.env.FIRESTORE_PROJECT_ID ? 'firestore' : 'memory',
+    storage: demo.storage,
     dataset: demo.dataset,
     business_date: demo.clock.business_date,
     endpoints: [

@@ -63,4 +63,6 @@ async function create(order) {
   return clone(saved);
 }
 
-module.exports = { findAll, find, findById, findSummaries, create };
+const memory = { findAll, find, findById, findSummaries, create };
+// With DATABASE_URL (Neon) the same functions run against PostgreSQL.
+module.exports = require('../data/db').enabled ? require('./postgres/orderRepository') : memory;

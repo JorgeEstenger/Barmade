@@ -52,4 +52,6 @@ async function setBatchQuantities(changes) {
   });
 }
 
-module.exports = { findAll, findById, findByIds, addBatch, setBatchQuantities };
+const memory = { findAll, findById, findByIds, addBatch, setBatchQuantities };
+// With DATABASE_URL (Neon) the same functions run against PostgreSQL.
+module.exports = require('../data/db').enabled ? require('./postgres/inventoryRepository') : memory;

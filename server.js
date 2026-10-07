@@ -9,15 +9,15 @@ const demoService = require('./services/demoService');
 const PORT = process.env.PORT || 3000;
 
 async function start() {
-  if (process.env.RENDER && !process.env.FIRESTORE_PROJECT_ID) {
-    console.warn('Persistence is disabled: set FIRESTORE_PROJECT_ID and Firebase credentials to retain data.');
+  if (process.env.RENDER && !process.env.DATABASE_URL && !process.env.FIRESTORE_PROJECT_ID) {
+    console.warn('Persistence is disabled: set DATABASE_URL (Neon PostgreSQL) to keep orders across restarts.');
   }
   // Demo dataset: alert checks at the dataset's "now" (deterministic).
   await demoService.ensureReady();
   // Generate EXPIRING_SOON / EXPIRED / LOW_STOCK / PREDICTED_RUNOUT alerts for the current inventory.
   const { created } = await alertService.checkExpirations();
-  const demo = demoService.status();
-  console.log(`Loaded ${demo.dataset} dataset: ${demo.counts.orders} orders, ${demo.counts.inventory_movements} movements, ${demo.counts.active_alerts} active alert(s).`);
+  const demo = await demoService.status();
+  console.log(`Loaded ${demo.dataset} dataset (${demo.storage}): ${demo.counts.orders} orders, ${demo.counts.inventory_movements} movements, ${demo.counts.active_alerts} active alert(s).`);
   if (created.length) console.log(`Startup check created ${created.length} alert(s).`);
 
   app.listen(PORT, () => {

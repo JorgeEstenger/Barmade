@@ -55,4 +55,6 @@ async function sumConsumption({ from, to, reasons }) {
   return totals;
 }
 
-module.exports = { createMany, find, sumConsumption };
+const memory = { createMany, find, sumConsumption };
+// With DATABASE_URL (Neon) the same functions run against PostgreSQL.
+module.exports = require('../data/db').enabled ? require('./postgres/movementRepository') : memory;

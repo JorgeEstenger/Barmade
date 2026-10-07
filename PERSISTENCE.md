@@ -1,28 +1,67 @@
-# Persistent data on Render with Firestore
+# Persistent data with Neon (PostgreSQL)
 
-The API can use Firebase Firestore instead of process memory. The default Firestore database has a free quota on the Spark plan; no Cloud Functions deployment is needed.
+Set `DATABASE_URL` and the API stores everything in PostgreSQL: inventory, menu, orders,
+inventory movements, alerts and the demo metadata. Orders and stock changes survive restarts
+and redeploys. Without `DATABASE_URL` the API runs fully in memory (the default for local
+development and for the tests).
+
+The API itself still runs on Render (Neon only hosts the database).
 
 ## Setup
 
-1. Create the Standard `(default)` Firestore database in Firebase project `barmade-206f3`, with private/production rules. Do not enable billing, PITR, or backups.
-2. Give the Render backend a dedicated Google service account with only the `Cloud Datastore User` role on this project. Keep its JSON credential out of GitHub and chat.
-3. In Render's Environment settings, set `FIRESTORE_PROJECT_ID=barmade-206f3` and set `FIREBASE_SERVICE_ACCOUNT_JSON` to the service account JSON as a secret. For local development, Application Default Credentials also work.
-4. Deploy the updated backend source and restart it. Startup must successfully access Firestore; incorrect credentials cause startup to fail rather than silently falling back to mock data.
+1. Create a free project at [neon.tech](https://neon.tech). Pick the region closest to your
+   Render service (for example *AWS US East (Ohio)* if Render is in Ohio). Every query crosses
+   that distance, so a matching region makes the API noticeably faster.
+2. In Neon, copy the connection string from **Connect**. It looks like
+   `postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/neondb?sslmode=require`.
+3. In Render, open the service, go to **Environment**, add `DATABASE_URL` with that value,
+   and save. Remove `FIRESTORE_PROJECT_ID` / `FIREBASE_SERVICE_ACCOUNT_JSON` if present.
+4. Deploy. On the first start the API creates its tables and loads the 60-day demo dataset
+   (takes a few seconds). The log shows:
 
-When `FIRESTORE_PROJECT_ID` is absent the API continues to use in-memory mock data. Tests must run without this variable to avoid touching live data.
+   ```
+   Empty database: loading the 60-day demo dataset (first start only)...
+   Loaded demo dataset (postgres): 7319 orders, 71569 movements, 3 active alert(s).
+   ```
+
+   Later restarts skip this step and keep all data.
+
+Keep the connection string secret: never commit it. For local runs, put it in a `.env` file
+(already in `.gitignore`):
+
+```
+DATABASE_URL=postgresql://...
+```
+
+and start with `npm run dev`, which loads `.env` automatically.
 
 ## Behavior
 
-Records live under `barmade/state/{inventory,menu,orders,alerts,movements}`. Mock data is seeded only on the first successful transaction; subsequent restarts load saved records. Inventory changes, orders, movements and alert updates commit atomically. Failed operations commit nothing. Read-only requests do not rewrite unchanged records.
+- **Tables:** `inventory`, `menu`, `orders`, `movements`, `alerts`, `demo_meta`. Each row keeps the full
+  record in a `data` jsonb column, plus plain columns for filtering (business date, channel,
+  ingredient, reason, ...). They are created automatically (`CREATE TABLE IF NOT EXISTS`).
+- **One transaction per request.** An order, its stock deductions, its movements and its
+  alerts commit together. If anything fails, nothing is saved.
+- **No double spending.** Writes are serialized with a PostgreSQL advisory lock, so two
+  simultaneous orders can't both use the last mozzarella.
+- **Reports are computed in SQL** where it matters (usage per ingredient, movement totals),
+  and the 60-day order history is never held in memory.
+- **`POST /api/demo/reset`** empties the tables and reloads the same deterministic 60 days.
+  This deletes every live order: use it before a presentation, not by accident.
+- **Demo clock:** after a reset the demo starts on Day 60 at 6:30 PM and runs in real time.
+  The clock is saved in the database, so it keeps moving across restarts. After a few real days
+  the "today" dashboard moves past Day 60 and only shows new orders. Reset to start over.
 
-**The 60-day demo dataset is in-memory only.** Its ~7,000 orders and ~70,000 movements are far too large for this read-everything-per-request design (and for Firestore's per-transaction write limit), so in Firestore mode the seed is the original small "classic" fixture, and `POST /api/demo/reset` returns `409 DEMO_RESET_UNAVAILABLE`. All other endpoints work in both modes.
+## Code
 
-The implementation reads all collections per request, appropriate for this small demo. Larger deployments should query individual records and paginate orders/alerts to reduce reads and stay within Firestore quotas.
+- [data/db.js](data/db.js): connection pool, transactions, schema.
+- [repositories/postgres/](repositories/postgres/): the same repository functions as the in-memory
+  ones, implemented with SQL. Each `repositories/*Repository.js` picks the PostgreSQL version
+  when `DATABASE_URL` is set. Services, controllers and routes are identical in both modes.
+- [services/demoService.js](services/demoService.js): first-start loading and reset.
 
-Existing changes held only in the live Render process are not automatically migrated. Before redeploying, export any current data you need to retain; the first database seed otherwise uses the original mocks.
+## Firestore (legacy)
 
-The API currently has no authentication for writes. Add authentication before using persistent storage for real business data.
-
-## Verify persistence
-
-Create a demo order, note its ID and resulting inventory, restart the Render service, then confirm the same order and quantities are still present. Do not claim persistence is active until this live check succeeds.
+The earlier Firestore persistence (`FIRESTORE_PROJECT_ID`) is still in the code but is no longer
+recommended. It only holds the small original fixture, because the 60-day dataset is too large for it.
+`DATABASE_URL` takes priority when both are set.

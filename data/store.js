@@ -73,6 +73,9 @@ function resetStore(dataset = config.demo.dataset) {
 
 const getDemoMeta = () => demoMeta;
 
-resetStore(process.env.FIRESTORE_PROJECT_ID ? 'classic' : config.demo.dataset);
+// With PostgreSQL the data lives in the database (seeded by services/demoService.js).
+if (!process.env.DATABASE_URL) {
+  resetStore(process.env.FIRESTORE_PROJECT_ID ? 'classic' : config.demo.dataset);
+}
 
 module.exports = { store, resetStore, createSeed, getDemoMeta };

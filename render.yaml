@@ -1,4 +1,6 @@
 # Blueprint for the BarMade backend in JorgeEstenger/Barmade (code at the repo root).
+# Data is stored in Neon PostgreSQL: set DATABASE_URL in the Render dashboard
+# (Environment) to the Neon connection string. Without it the API runs in memory.
 services:
   - type: web
     name: barmade-api
@@ -13,3 +15,5 @@ services:
         value: production
       - key: NODE_VERSION
         value: 24
+      - key: DATABASE_URL
+        sync: false

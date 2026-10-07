@@ -34,4 +34,12 @@ function startDemoClock(date) {
   demoOffsetMs = date ? new Date(date).getTime() - Date.now() : null;
 }
 
-module.exports = { now, setNow, startDemoClock };
+/**
+ * Restore a running demo clock from a saved offset (demo time - real time, in ms).
+ * Used with PostgreSQL so the demo date keeps moving forward across restarts.
+ */
+function setDemoOffset(offsetMs) {
+  demoOffsetMs = Number.isFinite(offsetMs) ? offsetMs : null;
+}
+
+module.exports = { now, setNow, startDemoClock, setDemoOffset };

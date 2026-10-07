@@ -63,6 +63,9 @@ async function runTransaction(db, task, seed) {
 
 function persistent(task) {
   return async function (...args) {
+    // PostgreSQL (Neon): one database transaction per service call.
+    const db = require('./db');
+    if (db.enabled) return db.transaction(() => task(...args));
     if (context.getStore() || !process.env.FIRESTORE_PROJECT_ID) return task(...args);
     const { createSeed } = require('./store');
     return runTransaction(getDatabase(), () => task(...args), createSeed);

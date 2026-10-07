@@ -9,6 +9,7 @@
 const { test, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 
+delete process.env.DATABASE_URL; // tests never touch the real database
 delete process.env.FIRESTORE_PROJECT_ID;
 delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 
