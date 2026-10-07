@@ -4,7 +4,7 @@
  */
 
 const { store } = require('../data/store');
-const { nextIdAfter } = require('../utils/ids');
+const { nextId } = require('../utils/ids');
 
 const clone = (value) => structuredClone(value);
 
@@ -12,8 +12,8 @@ const clone = (value) => structuredClone(value);
 async function createMany(movements) {
   const saved = [];
   for (const movement of movements) {
-    const last = store.movements[store.movements.length - 1];
-    const record = { id: nextIdAfter('MOV', last && last.id, 6), ...clone(movement) };
+    // Firestore collection reads have no implicit order, so inspect every ID.
+    const record = { id: nextId('MOV', store.movements.map((entry) => entry.id), 6), ...clone(movement) };
     store.movements.push(record);
     saved.push(record);
   }
@@ -55,6 +55,4 @@ async function sumConsumption({ from, to, reasons }) {
   return totals;
 }
 
-const memory = { createMany, find, sumConsumption };
-// With DATABASE_URL (Neon) the same functions run against PostgreSQL.
-module.exports = require('../data/db').enabled ? require('./postgres/movementRepository') : memory;
+module.exports = { createMany, find, sumConsumption };

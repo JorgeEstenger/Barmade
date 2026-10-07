@@ -9,8 +9,8 @@ const demoService = require('./services/demoService');
 const PORT = process.env.PORT || 3000;
 
 async function start() {
-  if (process.env.RENDER && !process.env.DATABASE_URL && !process.env.FIRESTORE_PROJECT_ID) {
-    console.warn('Persistence is disabled: set DATABASE_URL (Neon PostgreSQL) to keep orders across restarts.');
+  if (process.env.RENDER && !process.env.FIRESTORE_PROJECT_ID) {
+    console.warn('Persistence is disabled: set FIRESTORE_PROJECT_ID and FIREBASE_SERVICE_ACCOUNT_JSON to keep data across restarts.');
   }
   // Demo dataset: alert checks at the dataset's "now" (deterministic).
   await demoService.ensureReady();

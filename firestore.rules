@@ -1,0 +1,11 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // BarMade accesses Firestore only through the trusted Render backend.
+    // Firebase Admin credentials bypass these client rules.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

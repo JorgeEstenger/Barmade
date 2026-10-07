@@ -1,67 +1,61 @@
-# Persistent data with Neon (PostgreSQL)
+# Persistent data with Cloud Firestore
 
-Set `DATABASE_URL` and the API stores everything in PostgreSQL: inventory, menu, orders,
-inventory movements, alerts and the demo metadata. Orders and stock changes survive restarts
-and redeploys. Without `DATABASE_URL` the API runs fully in memory (the default for local
-development and for the tests).
+The Express API runs on Render and stores its live demo state in Cloud
+Firestore project `barmade1-7be2b`. Inventory, menu items, orders, inventory
+movements and alerts survive browser refreshes, Render restarts and redeploys.
 
-The API itself still runs on Render (Neon only hosts the database).
+The browser talks to the Render API, not directly to Firestore. Firebase user
+Authentication is therefore not required for this demo.
 
-## Setup
+## Firebase setup
 
-1. Create a free project at [neon.tech](https://neon.tech). Pick the region closest to your
-   Render service (for example *AWS US East (Ohio)* if Render is in Ohio). Every query crosses
-   that distance, so a matching region makes the API noticeably faster.
-2. In Neon, copy the connection string from **Connect**. It looks like
-   `postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/neondb?sslmode=require`.
-3. In Render, open the service, go to **Environment**, add `DATABASE_URL` with that value,
-   and save. Remove `FIRESTORE_PROJECT_ID` / `FIREBASE_SERVICE_ACCOUNT_JSON` if present.
-4. Deploy. On the first start the API creates its tables and loads the 60-day demo dataset
-   (takes a few seconds). The log shows:
+1. Create the Firestore database in project `barmade1-7be2b`.
+2. In **Project settings > Service accounts**, generate a private key.
+3. Keep the downloaded JSON private; never commit it.
+4. Deploy the checked-in rules with:
 
-   ```
-   Empty database: loading the 60-day demo dataset (first start only)...
-   Loaded demo dataset (postgres): 7319 orders, 71569 movements, 3 active alert(s).
+   ```bash
+   npx firebase-tools deploy --only firestore
    ```
 
-   Later restarts skip this step and keep all data.
+The rules deny all direct client access. Firebase Admin on the trusted Render
+backend bypasses client rules.
 
-Keep the connection string secret: never commit it. For local runs, put it in a `.env` file
-(already in `.gitignore`):
+## Render setup
 
+Configure these environment variables on the `barmade-api` service:
+
+```text
+NODE_ENV=production
+NODE_VERSION=24
+FIRESTORE_PROJECT_ID=barmade1-7be2b
+FIREBASE_SERVICE_ACCOUNT_JSON={complete service-account JSON}
 ```
-DATABASE_URL=postgresql://...
+
+Paste the complete JSON object as the value of
+`FIREBASE_SERVICE_ACCOUNT_JSON`. Do not add quotes around the whole object.
+The included `render.yaml` marks this value `sync: false`, so Render requests
+the secret without storing it in Git.
+
+Build and start commands:
+
+```text
+npm ci && npm test
+npm start
 ```
 
-and start with `npm run dev`, which loads `.env` automatically.
+## Behavior and limits
 
-## Behavior
+- The first Firestore-backed request initializes the compact classic fixture.
+- Every service operation runs in a Firestore transaction.
+- Orders, stock deductions, movements and alerts commit atomically.
+- Firestore retries conflicting transactions, preventing concurrent stock
+  updates from spending the same inventory twice.
+- `POST /api/demo/reset` is disabled in Firestore mode so a public demo cannot
+  erase the shared persistent state.
+- The generated 60-day dataset remains available in memory and as the separate
+  synthetic-data export. It is intentionally not loaded into this transaction-
+  based Firestore demo store because it contains more than 70,000 movements.
 
-- **Tables:** `inventory`, `menu`, `orders`, `movements`, `alerts`, `demo_meta`. Each row keeps the full
-  record in a `data` jsonb column, plus plain columns for filtering (business date, channel,
-  ingredient, reason, ...). They are created automatically (`CREATE TABLE IF NOT EXISTS`).
-- **One transaction per request.** An order, its stock deductions, its movements and its
-  alerts commit together. If anything fails, nothing is saved.
-- **No double spending.** Writes are serialized with a PostgreSQL advisory lock, so two
-  simultaneous orders can't both use the last mozzarella.
-- **Reports are computed in SQL** where it matters (usage per ingredient, movement totals),
-  and the 60-day order history is never held in memory.
-- **`POST /api/demo/reset`** empties the tables and reloads the same deterministic 60 days.
-  This deletes every live order: use it before a presentation, not by accident.
-- **Demo clock:** after a reset the demo starts on Day 60 at 6:30 PM and runs in real time.
-  The clock is saved in the database, so it keeps moving across restarts. After a few real days
-  the "today" dashboard moves past Day 60 and only shows new orders. Reset to start over.
-
-## Code
-
-- [data/db.js](data/db.js): connection pool, transactions, schema.
-- [repositories/postgres/](repositories/postgres/): the same repository functions as the in-memory
-  ones, implemented with SQL. Each `repositories/*Repository.js` picks the PostgreSQL version
-  when `DATABASE_URL` is set. Services, controllers and routes are identical in both modes.
-- [services/demoService.js](services/demoService.js): first-start loading and reset.
-
-## Firestore (legacy)
-
-The earlier Firestore persistence (`FIRESTORE_PROJECT_ID`) is still in the code but is no longer
-recommended. It only holds the small original fixture, because the 60-day dataset is too large for it.
-`DATABASE_URL` takes priority when both are set.
+For local development without Firestore variables, the API uses the generated
+in-memory dataset and tests never contact the cloud database.

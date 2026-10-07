@@ -36,7 +36,7 @@ function startDemoClock(date) {
 
 /**
  * Restore a running demo clock from a saved offset (demo time - real time, in ms).
- * Used with PostgreSQL so the demo date keeps moving forward across restarts.
+ * Used by the generated in-memory demo so its date keeps moving forward.
  */
 function setDemoOffset(offsetMs) {
   demoOffsetMs = Number.isFinite(offsetMs) ? offsetMs : null;

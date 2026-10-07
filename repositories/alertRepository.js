@@ -33,6 +33,4 @@ async function update(id, changes) {
   return clone(alert);
 }
 
-const memory = { find, create, update };
-// With DATABASE_URL (Neon) the same functions run against PostgreSQL.
-module.exports = require('../data/db').enabled ? require('./postgres/alertRepository') : memory;
+module.exports = { find, create, update };

@@ -15,9 +15,9 @@ What it does:
 
 Every route that existed before still exists and still accepts the same requests.
 
-**Storage:** with `DATABASE_URL` set, everything is stored in **Neon PostgreSQL** and orders survive
-restarts (see [PERSISTENCE.md](PERSISTENCE.md)). Without it, data is kept in memory, which is
-what local development and the tests use.
+**Storage:** on Render, inventory, menu items, orders, movements and alerts are stored in
+**Cloud Firestore** and survive restarts (see [PERSISTENCE.md](PERSISTENCE.md)). Without the
+Firestore environment variables, local development and tests use in-memory data.
 
 ---
 
@@ -28,14 +28,14 @@ Requirements: Node.js 22.9 or newer (developed on Node 24).
 ```bash
 npm install
 npm start          # http://localhost:3000  (PORT to change), in-memory data
-npm run dev        # restart on file changes; also loads DATABASE_URL from a local .env file
+npm run dev        # restart on file changes; loads .env.local / .env when present
 npm test           # node:test suites, always in memory (never touches the database)
 ```
 
 On startup the server prints a summary:
 
 ```
-Loaded demo dataset (postgres): 7319 orders, 71569 movements, 3 active alert(s).
+Loaded classic dataset (firestore): 2 orders, 0 movements, 3 active alert(s).
 BarMade API running at http://localhost:3000 (business date 2026-10-07)
 ```
 
@@ -49,17 +49,16 @@ This reloads exactly the same orders, inventory, deliveries, waste, alerts and p
 every time, and **deletes live orders**. `GET /api/demo` shows what is loaded: storage, seed,
 date range, planted-story dates and record counts.
 
-- **With Neon:** the 60 days are loaded automatically on the very first start (empty database).
-  After that, restarts and redeploys keep all data; only this endpoint reloads it (a few seconds).
+- **With Firestore:** the compact classic fixture is created automatically on first use and then
+  all live changes persist. Reset is disabled so a public demo cannot erase shared data.
 - **In memory:** the dataset is generated on every start (about 1 s), so a restart also resets it.
 
 ### The demo clock
 
 The history ends at **Wednesday 2026-10-07, 6:30 PM New York time** ("Day 60", in the middle of the dinner rush).
 After a reset, the API clock starts at that moment and then advances in real time, so
-live orders always follow the history, whatever today's real date is. With Neon the clock is saved
-in the database and keeps running across restarts. After a few real days, "today" moves past Day 60;
-`POST /api/demo/reset` starts over. Every response that depends on
+live orders always follow the history, whatever today's real date is. Firestore mode uses the real
+server clock with the compact persistent fixture. Every response that depends on
 the date says which business date it used (`date`, `business_date`, `as_of`). The frontend should
 read the date from these fields and not from the browser clock.
 
@@ -68,8 +67,8 @@ read the date from these fields and not from the browser clock.
 | Variable | Default | Purpose |
 |---|---|---|
 | `PORT` | `3000` | HTTP port |
-| `DATABASE_URL` | (unset) | Neon / PostgreSQL connection string. Set = persistent storage, unset = in memory |
-| `PG_POOL_SIZE` | `5` | Max database connections |
+| `FIRESTORE_PROJECT_ID` | (unset) | Firebase project ID. On Render use `barmade1-7be2b` |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | (unset) | Complete private service-account JSON used only by the Render backend |
 | `DEMO_DATASET` | `demo` | `demo` = 60-day dataset, `classic` = the original 12-ingredient fixture |
 | `DEMO_SEED` | `20261007` | Random seed. Same seed = same dataset |
 | `DEMO_DAYS` | `60` | Days of history |
@@ -81,7 +80,6 @@ read the date from these fields and not from the browser clock.
 | `RESTOCK_HORIZON_DAYS` | `7` | Restock covers this many days (capped at shelf life) |
 | `SAFETY_STOCK_DAYS` | `2` | Safety stock, in days of average usage |
 | `MOCK_NOW` | (unset) | Freeze the clock at a fixed time (the original option, still supported) |
-| `FIRESTORE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT_JSON` | (unset) | Legacy Firestore persistence (small fixture only). Use `DATABASE_URL` instead |
 
 Default channel fees (mock values, in [config/index.js](config/index.js)): dine_in 0%, takeout 0%,
 website 2.9%, barmade 5%, uber_eats 30%, doordash 25%.
@@ -355,11 +353,9 @@ The same seed always yields the same data, and the Nth rush after a reset is alw
 │   │   ├── orderFactory.js #   realistic random order requests (generator + rush)
 │   │   └── generator.js    #   deterministic 60-day history
 │   ├── store.js            # in-memory collections + resetStore('demo' | 'classic')
-│   ├── db.js               # Neon/PostgreSQL pool, transactions, schema
-│   └── persistence.js      # one transaction per service call (PostgreSQL or legacy Firestore)
-├── repositories/           # data access - in memory (data/store.js) ...
+│   └── persistence.js      # one Firestore transaction per service call
+├── repositories/           # data access over the active transaction snapshot
 │   ├── inventory/menu/order/alert/movement/demoRepository.js
-│   └── postgres/           #   ... or the same functions in SQL when DATABASE_URL is set
 ├── services/
 │   ├── stockRules.js       #   pure: FEFO, batch/stock status
 │   ├── orderRules.js       #   pure: normalize, recipes, pricing, records
@@ -378,14 +374,13 @@ The same seed always yields the same data, and the Nth rush after a reset is alw
 ### Datasets
 
 - `demo` (default): the 60-day dataset above.
-- `classic`: the original fixture (12 ingredients, 5 menu items, 2 orders, dough 8 orders from LOW_STOCK).
-  The original tests use it, and it is the legacy Firestore seed. Start with `DEMO_DATASET=classic npm start` to use it.
+- `classic`: the compact original fixture (12 ingredients, 5 menu items and 2 orders).
+  Tests and the persistent Firestore demo use it.
 
 ### Database layer
 
-Each repository has the same functions in memory and in SQL ([repositories/postgres/](repositories/postgres/)),
-and services don't know which one they use. With PostgreSQL every service call runs in one transaction
-with an advisory lock ([data/db.js](data/db.js)), so an order and all its stock changes are saved together.
+Repositories operate on an isolated state snapshot. With Firestore, every service call runs in one
+transaction, so an order, its stock changes, movements and alerts are saved together or not at all.
 
 ---
 

@@ -3,7 +3,7 @@
  *
  * Holds the live collections that the repositories read and write.
  * Only files in /repositories should import this module - that is the
- * seam where MongoDB/PostgreSQL would plug in later.
+ * seam where a database-backed implementation plugs in.
  *
  * Two datasets:
  *   'demo'    (default) - 60 days of generated history, see data/demo/generator.js
@@ -73,9 +73,8 @@ function resetStore(dataset = config.demo.dataset) {
 
 const getDemoMeta = () => demoMeta;
 
-// With PostgreSQL the data lives in the database (seeded by services/demoService.js).
-if (!process.env.DATABASE_URL) {
-  resetStore(process.env.FIRESTORE_PROJECT_ID ? 'classic' : config.demo.dataset);
-}
+// Firestore starts from the compact classic fixture; without Firestore the
+// larger generated dataset stays in memory for local development and tests.
+resetStore(process.env.FIRESTORE_PROJECT_ID ? 'classic' : config.demo.dataset);
 
 module.exports = { store, resetStore, createSeed, getDemoMeta };

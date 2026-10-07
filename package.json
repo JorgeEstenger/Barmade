@@ -1,11 +1,11 @@
 {
   "name": "barmade-backend",
   "version": "0.1.0",
-  "description": "BarMade - inventory management prototype for an Italian restaurant (in-memory mock data)",
-  "main": "firebase-functions.js",
+  "description": "BarMade inventory API with Cloud Firestore persistence for Render",
+  "main": "server.js",
   "scripts": {
     "start": "node --max-old-space-size=256 server.js",
-    "dev": "node --env-file-if-exists=.env --watch server.js",
+    "dev": "node --env-file-if-exists=.env.local --env-file-if-exists=.env --watch server.js",
     "test": "node --test"
   },
   "engines": {
@@ -15,8 +15,6 @@
   "private": true,
   "dependencies": {
     "express": "^5.1.0",
-    "firebase-admin": "^14.5.0",
-    "firebase-functions": "^7.4.0",
-    "pg": "^8.23.1"
+    "firebase-admin": "^14.5.0"
   }
 }

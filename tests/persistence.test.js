@@ -1,6 +1,5 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-delete process.env.DATABASE_URL; // tests never touch the real database
 delete process.env.FIRESTORE_PROJECT_ID;
 delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 const { runTransaction } = require('../data/persistence');
@@ -90,4 +89,18 @@ test('read-only calls do not rewrite stored data', async () => {
   const before = structuredClone([...db.records]);
   await runTransaction(db, () => assert.equal(store.inventory.length, 12), createSeed);
   assert.deepEqual([...db.records], before);
+});
+
+test('new IDs do not depend on Firestore collection read order', async () => {
+  clock.setNow('2026-10-06T12:00:00');
+  try {
+    const db = fakeDatabase();
+    await runTransaction(db, () => { store.orders.reverse(); }, createSeed);
+    const result = await runTransaction(db, () => orders.createOrder({
+      items: [{ menuItemId: 'MENU-001', quantity: 1 }],
+    }), createSeed);
+    assert.equal(result.order.id, 'ORD-003');
+  } finally {
+    clock.setNow(null);
+  }
 });

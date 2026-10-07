@@ -3,3 +3,6 @@ node_modules/
 *.log
 *service-account*.json
 firebase-credentials*.json
+.env.local
+exports/
+*.zip

@@ -3,7 +3,7 @@
  */
 
 const { store } = require('../data/store');
-const { nextIdAfter } = require('../utils/ids');
+const { nextId } = require('../utils/ids');
 
 const clone = (value) => structuredClone(value);
 
@@ -54,15 +54,13 @@ async function findSummaries(filter = {}) {
 
 /** Save a new order and assign its ID (ORD-001, ORD-002, ...). */
 async function create(order) {
-  const last = store.orders[store.orders.length - 1];
   const saved = {
-    id: nextIdAfter('ORD', last && last.id),
+    // Firestore collection reads have no implicit order, so inspect every ID.
+    id: nextId('ORD', store.orders.map((entry) => entry.id)),
     ...clone(order),
   };
   store.orders.push(saved);
   return clone(saved);
 }
 
-const memory = { findAll, find, findById, findSummaries, create };
-// With DATABASE_URL (Neon) the same functions run against PostgreSQL.
-module.exports = require('../data/db').enabled ? require('./postgres/orderRepository') : memory;
+module.exports = { findAll, find, findById, findSummaries, create };

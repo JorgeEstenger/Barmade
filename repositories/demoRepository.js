@@ -1,7 +1,7 @@
 /**
  * Demo dataset storage: record counts and metadata (seed, dates, stories).
- * In memory the dataset is loaded by data/store.js; with PostgreSQL see
- * repositories/postgres/demoRepository.js.
+ * In memory the dataset is loaded by data/store.js. In Firestore mode these
+ * functions run inside the transaction snapshot supplied by persistence.js.
  */
 
 const { store, getDemoMeta } = require('../data/store');
@@ -20,5 +20,4 @@ async function getMeta() {
   return getDemoMeta();
 }
 
-const memory = { counts, getMeta };
-module.exports = require('../data/db').enabled ? require('./postgres/demoRepository') : memory;
+module.exports = { counts, getMeta };

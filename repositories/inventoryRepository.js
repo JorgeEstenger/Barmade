@@ -2,8 +2,8 @@
  * Inventory data access.
  *
  * All functions are async and return copies, exactly like a database driver
- * would. To move to MongoDB/PostgreSQL, rewrite this file (same function
- * signatures) and nothing in services/controllers needs to change.
+ * would. Firestore persistence is applied around service calls, so repository
+ * signatures remain independent from the storage engine.
  */
 
 const { store } = require('../data/store');
@@ -52,6 +52,4 @@ async function setBatchQuantities(changes) {
   });
 }
 
-const memory = { findAll, findById, findByIds, addBatch, setBatchQuantities };
-// With DATABASE_URL (Neon) the same functions run against PostgreSQL.
-module.exports = require('../data/db').enabled ? require('./postgres/inventoryRepository') : memory;
+module.exports = { findAll, findById, findByIds, addBatch, setBatchQuantities };

@@ -16,12 +16,4 @@ function nextId(prefix, existingIds, width = 3) {
   return `${prefix}-${String(max + 1).padStart(digits, '0')}`;
 }
 
-/**
- * Faster variant for append-only collections (orders, movements) whose IDs
- * only ever increase: only the last ID needs to be looked at.
- */
-function nextIdAfter(prefix, lastId, width = 3) {
-  return nextId(prefix, lastId ? [lastId] : [], width);
-}
-
-module.exports = { nextId, nextIdAfter };
+module.exports = { nextId };
