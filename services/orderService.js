@@ -87,7 +87,7 @@ async function processOrder(body) {
   const now = clock.now();
 
   // Step 1: normalize (needs the menu to resolve item ids/keys and modifiers).
-  const { channel, lines } = orderRules.normalizeOrder(body, await menuRepository.findAll());
+  const { channel, lines, orderDetails } = orderRules.normalizeOrder(body, await menuRepository.findAll());
 
   // Step 2: total required amount per ingredient.
   const required = orderRules.computeRequirements(lines);
@@ -110,7 +110,7 @@ async function processOrder(body) {
   );
 
   // Step 5: save the order (prices, channel fee, net).
-  const order = await orderRepository.create(orderRules.buildOrderRecord({ channel, lines, plans, now }));
+  const order = await orderRepository.create(orderRules.buildOrderRecord({ channel, lines, plans, now, orderDetails }));
 
   // Step 6: audit trail - one sale movement per ingredient, with the balance after the sale.
   const updated = new Map((await inventoryRepository.findByIds([...required.keys()])).map((i) => [i.id, i]));
@@ -122,10 +122,44 @@ async function processOrder(body) {
   return { order, movements, alertsCreated: alerts.created, alertsResolved: alerts.resolved };
 }
 
+const STATUS_TRANSITIONS = {
+  RECEIVED: ['PREPARING', 'CANCELLED'],
+  PREPARING: ['READY', 'CANCELLED'],
+  READY: ['COMPLETED'],
+  COMPLETED: [],
+  CANCELLED: [],
+};
+
+async function updateOrderStatus(id, body) {
+  const status = body && body.status;
+  if (typeof status !== 'string' || !Object.hasOwn(STATUS_TRANSITIONS, status)) {
+    throw new AppError(400, 'INVALID_ORDER_STATUS', `status must be one of: ${Object.keys(STATUS_TRANSITIONS).join(', ')}`);
+  }
+  return runExclusive(async () => {
+    const order = await orderRepository.findById(id);
+    if (!order) throw new AppError(404, 'ORDER_NOT_FOUND', `Order ${id} was not found.`);
+    const allowed = STATUS_TRANSITIONS[order.status] || [];
+    if (!allowed.includes(status)) {
+      throw new AppError(409, 'INVALID_ORDER_STATUS_TRANSITION', `Order ${id} cannot transition from ${order.status} to ${status}.`, {
+        currentStatus: order.status,
+        requestedStatus: status,
+        allowed,
+      });
+    }
+    const at = new Date(clock.now()).toISOString();
+    return orderRepository.updateStatus(id, {
+      status,
+      updatedAt: at,
+      statusHistory: [...(Array.isArray(order.statusHistory) ? order.statusHistory : []), { status, at }],
+    });
+  });
+}
+
 const { persistent } = require('../data/persistence');
 module.exports = {
   getAllOrders: persistent(getAllOrders),
   findOrders: persistent(findOrders),
   getOrderById: persistent(getOrderById),
   createOrder: persistent(createOrder),
+  updateOrderStatus: persistent(updateOrderStatus),
 };

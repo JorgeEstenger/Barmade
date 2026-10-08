@@ -63,4 +63,12 @@ async function create(order) {
   return clone(saved);
 }
 
-module.exports = { findAll, find, findById, findSummaries, create };
+/** Update the three status-tracking fields as one repository operation. */
+async function updateStatus(id, { status, updatedAt, statusHistory }) {
+  const order = store.orders.find((entry) => entry.id === id);
+  if (!order) return null;
+  Object.assign(order, { status, updatedAt, statusHistory: clone(statusHistory) });
+  return clone(order);
+}
+
+module.exports = { findAll, find, findById, findSummaries, create, updateStatus };

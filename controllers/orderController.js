@@ -28,4 +28,10 @@ async function createOrder(req, res) {
   });
 }
 
-module.exports = { getOrders, getOrder, createOrder };
+// PATCH /api/orders/:id/status
+async function updateOrderStatus(req, res) {
+  const order = await orderService.updateOrderStatus(req.params.id, req.body);
+  res.status(200).json({ message: `Order ${order.id} status changed to ${order.status}.`, data: order });
+}
+
+module.exports = { getOrders, getOrder, createOrder, updateOrderStatus };

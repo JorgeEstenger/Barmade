@@ -21,6 +21,7 @@ const AppError = require('../utils/AppError');
 
 const CHANNELS = ['dine_in', 'takeout', 'website', 'uber_eats', 'doordash', 'barmade'];
 const DEFAULT_CHANNEL = 'dine_in';
+const FULFILLMENTS = ['to_go', 'for_here'];
 
 const roundMoney = (n) => Math.round(n * 100) / 100;
 
@@ -30,6 +31,44 @@ const feeRate = (channel) => config.channels[channel] || 0;
 const findMenuItem = (menu, idOrKey) => menu.find((m) => m.id === idOrKey || (m.key && m.key === idOrKey));
 
 const modifierId = (m) => (typeof m === 'string' ? m : m && m.id);
+
+/** Validate optional customer-facing metadata without renaming the public fields. */
+function normalizeOrderDetails(body, channel) {
+  const { source, fulfillment, tableNumber, customerName, orderNumber } = body;
+  if (source !== undefined && (typeof source !== 'string' || source.trim() === '')) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'source must be a non-empty string.');
+  }
+  if (fulfillment !== undefined && !FULFILLMENTS.includes(fulfillment)) {
+    throw new AppError(400, 'INVALID_FULFILLMENT', `fulfillment must be one of: ${FULFILLMENTS.join(', ')}`);
+  }
+  if (tableNumber !== undefined && tableNumber !== null
+      && !((typeof tableNumber === 'string' && tableNumber.trim() !== '')
+        || (Number.isInteger(tableNumber) && tableNumber > 0))) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'tableNumber must be null, a non-empty string, or a positive integer.');
+  }
+  if (customerName !== undefined && customerName !== null
+      && (typeof customerName !== 'string' || customerName.trim() === '')) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'customerName must be null or a non-empty string.');
+  }
+  if (orderNumber !== undefined && orderNumber !== null
+      && (!Number.isInteger(orderNumber) || orderNumber <= 0)) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'orderNumber must be null or a positive integer.');
+  }
+
+  const isLiveBarmade = channel === 'barmade' && source === 'barmade-web';
+  if (isLiveBarmade && !FULFILLMENTS.includes(fulfillment)) {
+    throw new AppError(400, 'INVALID_FULFILLMENT', `Live BarMade orders require fulfillment: ${FULFILLMENTS.join(' or ')}.`);
+  }
+
+  return {
+    isLiveBarmade,
+    source,
+    fulfillment,
+    tableNumber: tableNumber === undefined && isLiveBarmade ? null : tableNumber,
+    customerName: typeof customerName === 'string' ? customerName.trim() : customerName,
+    orderNumber,
+  };
+}
 
 /**
  * Accepts both request shapes and returns
@@ -49,6 +88,7 @@ function normalizeOrder(body, menu) {
   if (!CHANNELS.includes(channel)) {
     throw new AppError(400, 'INVALID_CHANNEL', `channel must be one of: ${CHANNELS.join(', ')}`);
   }
+  const orderDetails = normalizeOrderDetails(body, channel);
 
   const parsed = items.map((item, index) => {
     const id = item && (item.item_id ?? item.menuItemId ?? item.menu_item_id);
@@ -85,7 +125,7 @@ function normalizeOrder(body, menu) {
     return { menuItem, quantity, modifiers };
   });
 
-  return { channel, lines };
+  return { channel, lines, orderDetails };
 }
 
 /** Ingredient amounts for ONE serving of a menu item with modifiers applied. */
@@ -175,11 +215,12 @@ function priceOrder(lines, channel) {
  * The stored order. `total` and `createdAt` are kept for backward
  * compatibility (total = gross_total, createdAt = placed_at).
  */
-function buildOrderRecord({ channel, lines, plans, now, date }) {
+function buildOrderRecord({ channel, lines, plans, now, date, orderDetails = {} }) {
   const pricing = priceOrder(lines, channel);
   const placedAt = new Date(now).toISOString();
-  return {
-    status: 'COMPLETED',
+  const { isLiveBarmade = false, ...details } = orderDetails;
+  const record = {
+    status: isLiveBarmade ? 'RECEIVED' : 'COMPLETED',
     channel,
     placed_at: placedAt,
     business_date: date || businessDate(now),
@@ -198,6 +239,21 @@ function buildOrderRecord({ channel, lines, plans, now, date }) {
       batches: plan.allocations.map((a) => ({ batchId: a.batchId, quantity: a.take })),
     })),
   };
+
+  // Preserve the existing synthetic/historical shape unless metadata was
+  // supplied. Live BarMade orders always get the complete tracking contract.
+  for (const field of ['source', 'fulfillment', 'tableNumber', 'customerName', 'orderNumber']) {
+    if (details[field] !== undefined) record[field] = details[field];
+  }
+  if (isLiveBarmade) {
+    record.source = 'barmade-web';
+    record.tableNumber ??= null;
+    record.customerName ??= null;
+    record.orderNumber ??= null;
+    record.updatedAt = placedAt;
+    record.statusHistory = [{ status: 'RECEIVED', at: placedAt }];
+  }
+  return record;
 }
 
 /** Positive change = stock came in, negative = stock left. */
@@ -223,6 +279,6 @@ function buildMovement({ ingredient, change, reason, now, date, orderId = null, 
 }
 
 module.exports = {
-  CHANNELS, DEFAULT_CHANNEL, MOVEMENT_REASONS, roundMoney, feeRate, findMenuItem, normalizeOrder,
+  CHANNELS, DEFAULT_CHANNEL, FULFILLMENTS, MOVEMENT_REASONS, roundMoney, feeRate, findMenuItem, normalizeOrder,
   servingRecipe, computeRequirements, planRequirements, priceOrder, buildOrderRecord, buildMovement, onHand,
 };

@@ -106,6 +106,7 @@ New routes:
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/orders/:id` | One order |
+| PATCH | `/api/orders/:id/status` | Advance a live BarMade order through `RECEIVED -> PREPARING -> READY -> COMPLETED`, or cancel from `RECEIVED`/`PREPARING` |
 | GET | `/api/inventory/movements` | Movement log, newest first. `?ingredient_id=`, `?reason=`, `?order_id=`, `?date=`, `?from=`, `?to=`, `?limit=`, `?offset=` |
 | GET | `/api/inventory/forecast` | Per ingredient: average daily usage, days of cover, predicted run-out date, next delivery, status. `?status=RUNOUT_RISK\|OVERSTOCK\|OK` |
 | POST | `/api/inventory/delivery` | Receive stock: `{ ingredient_id, quantity, unit?, expires_at?, supplier?, note? }` |
@@ -126,6 +127,8 @@ New routes:
 Field naming: the original resources keep their camelCase fields (`ingredientId`, `reorderPoint`, …).
 New fields and new endpoints use snake_case, matching the workflow spec (`gross_total`, `channel_fee`, …).
 Alerts include both, for example `ingredientId` and `ingredient_id`.
+Live customer-order metadata keeps the client contract's camelCase names: `tableNumber`, `customerName`,
+`orderNumber`, `updatedAt`, and `statusHistory`.
 
 ---
 
@@ -155,6 +158,14 @@ curl -X POST $B/api/orders -H "Content-Type: application/json" \
 # Legacy order body still works (channel defaults to dine_in)
 curl -X POST $B/api/orders -H "Content-Type: application/json" \
   -d '{"items":[{"menuItemId":"MENU-002","quantity":3}]}'
+
+# Live BarMade customer order (starts in RECEIVED)
+curl -X POST $B/api/orders -H "Content-Type: application/json" \
+  -d '{"channel":"barmade","source":"barmade-web","fulfillment":"to_go","tableNumber":null,"customerName":"Jorge","orderNumber":1001,"items":[{"menuItemId":"MENU-001","quantity":1}]}'
+
+# Valid next status
+curl -X PATCH $B/api/orders/ORD-003/status -H "Content-Type: application/json" \
+  -d '{"status":"PREPARING"}'
 
 # Stock changes
 curl -X POST $B/api/inventory/delivery -H "Content-Type: application/json" \

@@ -87,6 +87,7 @@ test('GET /api/inventory/:id returns batches; unknown id -> 404', async () => {
 test('successful order consumes the right amounts and decreases inventory', async () => {
   const { status, body } = await order('MENU-002', 3); // 3 Pepperoni Pizzas
   assert.equal(status, 201);
+  assert.equal(body.data.status, 'COMPLETED'); // non-live orders keep legacy behavior
   assert.equal(body.data.total, 53.97);
 
   const consumed = Object.fromEntries(body.consumed.map((c) => [c.ingredientId, c.quantity]));
@@ -99,6 +100,79 @@ test('successful order consumes the right amounts and decreases inventory', asyn
 
   const orders = await api('GET', '/api/orders');
   assert.equal(orders.body.count, 3); // 2 mock + 1 new
+});
+
+test('live BarMade order follows RECEIVED -> PREPARING -> READY -> COMPLETED without reapplying inventory', async () => {
+  const before = await getIngredient('ING-012');
+  const created = await api('POST', '/api/orders', {
+    channel: 'barmade',
+    source: 'barmade-web',
+    fulfillment: 'to_go',
+    tableNumber: null,
+    customerName: 'Jorge',
+    orderNumber: 1001,
+    items: [{ menuItemId: 'MENU-005', quantity: 1 }],
+  });
+
+  assert.equal(created.status, 201);
+  const live = created.body.data;
+  assert.equal(live.status, 'RECEIVED');
+  assert.equal(live.channel, 'barmade');
+  assert.equal(live.source, 'barmade-web');
+  assert.equal(live.fulfillment, 'to_go');
+  assert.equal(live.tableNumber, null);
+  assert.equal(live.customerName, 'Jorge');
+  assert.equal(live.orderNumber, 1001);
+  assert.ok(!Number.isNaN(Date.parse(live.updatedAt)));
+  assert.deepEqual(live.statusHistory, [{ status: 'RECEIVED', at: live.updatedAt }]);
+
+  const afterCreate = await getIngredient('ING-012');
+  assert.equal(afterCreate.totalQuantity, before.totalQuantity - 1);
+
+  const preparing = await api('PATCH', `/api/orders/${live.id}/status`, { status: 'PREPARING' });
+  assert.equal(preparing.status, 200);
+  assert.equal(preparing.body.data.status, 'PREPARING');
+  assert.equal(preparing.body.data.updatedAt, preparing.body.data.statusHistory[1].at);
+  assert.deepEqual(preparing.body.data.statusHistory.map((entry) => entry.status), ['RECEIVED', 'PREPARING']);
+
+  const ready = await api('PATCH', `/api/orders/${live.id}/status`, { status: 'READY' });
+  assert.equal(ready.status, 200);
+  assert.deepEqual(ready.body.data.statusHistory.map((entry) => entry.status), ['RECEIVED', 'PREPARING', 'READY']);
+
+  const invalid = await api('PATCH', `/api/orders/${live.id}/status`, { status: 'CANCELLED' });
+  assert.equal(invalid.status, 409);
+  assert.equal(invalid.body.error.code, 'INVALID_ORDER_STATUS_TRANSITION');
+
+  const completed = await api('PATCH', `/api/orders/${live.id}/status`, { status: 'COMPLETED' });
+  assert.equal(completed.status, 200);
+  assert.deepEqual(completed.body.data.statusHistory.map((entry) => entry.status), ['RECEIVED', 'PREPARING', 'READY', 'COMPLETED']);
+
+  const fetched = await api('GET', `/api/orders/${live.id}`);
+  assert.equal(fetched.status, 200);
+  assert.equal(fetched.body.data.status, 'COMPLETED');
+  assert.deepEqual(await getIngredient('ING-012'), afterCreate); // status changes never consume stock
+});
+
+test('live BarMade orders can be cancelled only from RECEIVED or PREPARING', async () => {
+  const createLive = (orderNumber) => api('POST', '/api/orders', {
+    channel: 'barmade', source: 'barmade-web', fulfillment: 'for_here', tableNumber: 12,
+    customerName: 'Demo Customer', orderNumber,
+    items: [{ menuItemId: 'MENU-005', quantity: 1 }],
+  });
+
+  const received = await createLive(1002);
+  const cancelledFromReceived = await api('PATCH', `/api/orders/${received.body.data.id}/status`, { status: 'CANCELLED' });
+  assert.equal(cancelledFromReceived.status, 200);
+  assert.deepEqual(cancelledFromReceived.body.data.statusHistory.map((entry) => entry.status), ['RECEIVED', 'CANCELLED']);
+
+  const preparing = await createLive(1003);
+  assert.equal((await api('PATCH', `/api/orders/${preparing.body.data.id}/status`, { status: 'PREPARING' })).status, 200);
+  const cancelledFromPreparing = await api('PATCH', `/api/orders/${preparing.body.data.id}/status`, { status: 'CANCELLED' });
+  assert.equal(cancelledFromPreparing.status, 200);
+  assert.deepEqual(cancelledFromPreparing.body.data.statusHistory.map((entry) => entry.status), ['RECEIVED', 'PREPARING', 'CANCELLED']);
+
+  const afterCancellation = await api('PATCH', `/api/orders/${preparing.body.data.id}/status`, { status: 'READY' });
+  assert.equal(afterCancellation.status, 409);
 });
 
 test('FEFO: 6000 ml of tomato sauce empties the earliest batch first', async () => {
